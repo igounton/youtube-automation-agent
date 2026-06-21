@@ -13,6 +13,14 @@
 
 Fully automated YouTube channel management system. AI agents handle content strategy, scriptwriting, thumbnail generation, SEO, publishing, and analytics — end to end, on a daily schedule.
 
+## Built by
+
+[@darkzOGx](https://github.com/darkzOGx). Solo builder shipping AI automation and developer tools. Currently building ConstructionBids.ai.
+
+Find me on [X](https://x.com/darkzOGx) and [laderalabs.io](https://laderalabs.io).
+
+If this saves you time, a star helps it reach more developers.
+
 ## Architecture
 
 ```mermaid
@@ -288,6 +296,15 @@ Enable debug logging:
 ```bash
 NODE_ENV=development DEBUG_MODE=true npm start
 ```
+
+## More Tools by darkzOGx
+
+If this was useful, check out:
+
+- [darkzloop](https://github.com/darkzOGx/darkzloop): terminal agent runner that turns any LLM into a disciplined software engineer (FSM control, model-agnostic, BYO auth)
+- [darkzBOX](https://github.com/darkzOGx/darkzBOX): open-source Instantly.ai clone with smart automated email replies
+- [open-sales-researcher](https://github.com/darkzOGx/open-sales-researcher): autonomous B2B company research. Works with Claude Code, Cursor, Copilot.
+- [darkzseo](https://github.com/darkzOGx/darkzseo): SEO tooling
 
 ## Contributing
 
