@@ -1,4 +1,5 @@
 const { Logger } = require('../utils/logger');
+const { AITextService } = require('../utils/ai-text-service');
 
 class ScriptWriterAgent {
   constructor(db, credentials) {
@@ -6,6 +7,7 @@ class ScriptWriterAgent {
     this.credentials = credentials;
     this.logger = new Logger('ScriptWriter');
     this.templates = this.loadTemplates();
+    this.aiTextService = new AITextService(credentials?.credentials || credentials || {});
   }
 
   async initialize() {
@@ -48,7 +50,15 @@ class ScriptWriterAgent {
       this.logger.info(`Generating script for: ${strategy.topic}`);
       
       const template = this.templates[strategy.contentType.toLowerCase()] || this.templates.explainer;
+      const aiScript = await this.generateScriptWithAI(strategy, template);
+      if (aiScript) {
+        aiScript.fullScript = this.formatFullScript(aiScript);
+        await this.db.saveScript(aiScript);
+        this.logger.info(`Script generated with AI provider: ${aiScript.title}`);
+        return aiScript;
+      }
       
+      this.logger.info('Using template script generation');
       // Generate script components
       const hook = await this.generateHook(strategy);
       const introduction = await this.generateIntroduction(strategy);
@@ -89,6 +99,147 @@ class ScriptWriterAgent {
     }
   }
 
+  async generateScriptWithAI(strategy, template) {
+    if (!this.aiTextService.isAvailable()) {
+      this.logger.info('Using template script generation because no AI text provider is configured');
+      return null;
+    }
+
+    const prompt = `You are writing a YouTube script plan.
+Return only valid JSON with this exact shape:
+{
+  "title": "compelling title under 100 characters",
+  "hook": "opening hook in one sentence",
+  "sections": [
+    { "title": "section title", "content": ["spoken script bullet"], "duration": 60 }
+  ],
+  "cta": "clear call to action"
+}
+
+Topic: ${strategy.topic}
+Style/content type: ${strategy.contentType}
+Angle: ${strategy.angle}
+Target audience: ${strategy.targetAudience}
+Desired length: ${process.env.DEFAULT_VIDEO_LENGTH || '8-12 minutes'}
+Tone: ${template.tone}
+Pacing: ${template.pacing}
+Keywords: ${(strategy.keywords || []).join(', ')}
+Avoid fabricated statistics, unsupported claims, and fake urgency.`;
+
+    try {
+      const response = await this.aiTextService.generateText(prompt, {
+        maxTokens: 1800,
+        temperature: 0.7
+      });
+      const parsed = this.parseAIJsonResponse(response);
+      const sections = this.normalizeAISections(parsed.sections, strategy);
+
+      if (!parsed.title || !parsed.hook || sections.length === 0) {
+        throw new Error('AI script response missing required fields');
+      }
+
+      this.logger.info(`Using AI script generation via ${this.aiTextService.providerName}`);
+      return {
+        title: String(parsed.title).slice(0, 100),
+        hook: this.normalizeAIHook(parsed.hook),
+        introduction: await this.generateIntroduction(strategy),
+        mainContent: {
+          sections,
+          totalDuration: this.calculateSectionsDuration(sections)
+        },
+        conclusion: await this.generateConclusion(strategy),
+        callToAction: this.normalizeAICTA(parsed.cta, strategy),
+        duration: this.estimateDuration({ sections }),
+        tone: template.tone,
+        pacing: template.pacing,
+        keywords: strategy.keywords || [],
+        metadata: {
+          strategy,
+          generatedAt: new Date().toISOString(),
+          version: '1.0',
+          generationSource: 'ai'
+        }
+      };
+    } catch (error) {
+      this.logger.warn(`AI script generation failed; using template fallback: ${error.message}`);
+      return null;
+    }
+  }
+
+  parseAIJsonResponse(response) {
+    const text = String(response || '').trim();
+    const withoutFences = text
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/```$/i, '')
+      .trim();
+
+    try {
+      return JSON.parse(withoutFences);
+    } catch (error) {
+      const match = withoutFences.match(/\{[\s\S]*\}/);
+      if (!match) {
+        throw error;
+      }
+      return JSON.parse(match[0]);
+    }
+  }
+
+  normalizeAIHook(hook) {
+    const text = typeof hook === 'object' && hook !== null ? hook.text : hook;
+    return {
+      type: 'ai',
+      text: String(text).trim(),
+      duration: '0:00-0:05'
+    };
+  }
+
+  normalizeAISections(sections, strategy) {
+    if (!Array.isArray(sections)) {
+      return [];
+    }
+
+    return sections
+      .slice(0, 8)
+      .map((section, index) => {
+        const rawContent = Array.isArray(section.content)
+          ? section.content
+          : [section.content || section.summary || section.description];
+        const content = rawContent
+          .filter(Boolean)
+          .map(line => String(line).trim())
+          .filter(Boolean);
+
+        return {
+          type: 'ai_generated',
+          title: String(section.title || `${strategy.topic} Part ${index + 1}`).trim(),
+          content,
+          duration: parseInt(section.duration, 10) || 60
+        };
+      })
+      .filter(section => section.title && section.content.length > 0);
+  }
+
+  normalizeAICTA(cta, strategy) {
+    if (cta && typeof cta === 'object') {
+      return {
+        type: 'call_to_action',
+        subscribe: String(cta.subscribe || cta.text || `Subscribe for more on ${strategy.topic}.`),
+        like: String(cta.like || 'Like this video if it helped.'),
+        comment: String(cta.comment || `Share your experience with ${strategy.topic} in the comments.`),
+        nextVideo: String(cta.nextVideo || 'Watch the next related video for more context.'),
+        duration: '15 seconds'
+      };
+    }
+
+    return {
+      type: 'call_to_action',
+      subscribe: String(cta || `Subscribe for more practical videos about ${strategy.topic}.`),
+      like: 'Like this video if it helped.',
+      comment: `Share your experience with ${strategy.topic} in the comments.`,
+      nextVideo: 'Watch the next related video for more context.',
+      duration: '15 seconds'
+    };
+  }
   async generateTitle(strategy) {
     const templates = [
       `${strategy.angle}`,
@@ -159,11 +310,11 @@ class ScriptWriterAgent {
 
   generateStatistic(topic) {
     const stats = [
-      `90% of people don't understand ${topic} correctly`,
-      `${topic} has grown by 300% in the last year alone`,
-      `experts predict ${topic} will be worth billions by 2030`,
-      `only 1 in 10 people are using ${topic} effectively`,
-      `${topic} can save you hours every single day`
+      `many people are still figuring out how ${topic} works`,
+      `the conversation around ${topic} keeps expanding`,
+      `experts continue to debate where ${topic} is headed`,
+      `people often miss the practical side of ${topic}`,
+      `${topic} can be easier to approach with a clear framework`
     ];
     
     return stats[Math.floor(Math.random() * stats.length)];

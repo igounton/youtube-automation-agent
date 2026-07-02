@@ -8,6 +8,8 @@ class DailyAutomation {
     this.logger = new Logger('DailyAutomation');
     this.scheduledTasks = new Map();
     this.isEnabled = true;
+    this.healthCheckInterval = null;
+    this.lastHealthCheck = null;
   }
 
   async initialize() {
@@ -475,7 +477,7 @@ class DailyAutomation {
 
   startMonitoringLoop() {
     // Monitor system health every hour
-    setInterval(async () => {
+    this.healthCheckInterval = setInterval(async () => {
       try {
         await this.performHealthCheck();
       } catch (error) {
@@ -485,6 +487,8 @@ class DailyAutomation {
   }
 
   async performHealthCheck() {
+    this.lastHealthCheck = new Date();
+
     const health = {
       timestamp: new Date().toISOString(),
       database: false,
@@ -556,7 +560,10 @@ class DailyAutomation {
       task.stop();
       this.logger.info(`Stopped scheduled task: ${name}`);
     });
-    
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval);
+      this.healthCheckInterval = null;
+    }
     this.isEnabled = false;
     this.logger.info('All automation tasks stopped');
   }
