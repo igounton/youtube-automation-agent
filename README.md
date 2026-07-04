@@ -24,7 +24,7 @@ Fully automated YouTube channel management system. AI agents handle content stra
 
 ## Built by
 
-[@darkzOGx](https://github.com/darkzOGx). Solo builder shipping AI automation and developer tools. Currently building ConstructionBids.ai.
+[@darkzOGx](https://github.com/darkzOGx). Solo builder shipping AI automation and developer tools.
 
 Find me on [X](https://x.com/darkzOGx) and [laderalabs.io](https://laderalabs.io).
 
